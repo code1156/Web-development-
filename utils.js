@@ -1,1157 +1,973 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.shuffle = exports.parsePackageVersion = exports.supportsRetryableWrites = exports.enumToString = exports.emitWarningOnce = exports.emitWarning = exports.MONGODB_WARNING_CODE = exports.DEFAULT_PK_FACTORY = exports.HostAddress = exports.BufferPool = exports.deepCopy = exports.isRecord = exports.setDifference = exports.isSuperset = exports.resolveOptions = exports.hasAtomicOperators = exports.makeInterruptibleAsyncInterval = exports.calculateDurationInMs = exports.now = exports.makeClientMetadata = exports.makeStateMachine = exports.errorStrictEqual = exports.arrayStrictEqual = exports.eachAsyncSeries = exports.eachAsync = exports.collationNotSupported = exports.maxWireVersion = exports.uuidV4 = exports.databaseNamespace = exports.maybePromise = exports.makeCounter = exports.MongoDBNamespace = exports.ns = exports.deprecateOptions = exports.defaultMsgHandler = exports.getTopology = exports.decorateWithExplain = exports.decorateWithReadConcern = exports.decorateWithCollation = exports.isPromiseLike = exports.applyWriteConcern = exports.applyRetryableWrites = exports.executeLegacyOperation = exports.filterOptions = exports.mergeOptions = exports.isObject = exports.parseIndexOptions = exports.normalizeHintField = exports.checkCollectionName = exports.MAX_JS_INT = void 0;
-const os = require("os");
-const crypto = require("crypto");
-const promise_provider_1 = require("./promise_provider");
-const error_1 = require("./error");
-const write_concern_1 = require("./write_concern");
-const common_1 = require("./sdam/common");
-const read_concern_1 = require("./read_concern");
-const bson_1 = require("./bson");
-const read_preference_1 = require("./read_preference");
-const url_1 = require("url");
-const constants_1 = require("./cmap/wire_protocol/constants");
-exports.MAX_JS_INT = Number.MAX_SAFE_INTEGER + 1;
-/**
- * Throws if collectionName is not a valid mongodb collection namespace.
- * @internal
+'use strict';
+
+/*!
+ * Module dependencies.
  */
-function checkCollectionName(collectionName) {
-    if ('string' !== typeof collectionName) {
-        throw new error_1.MongoInvalidArgumentError('Collection name must be a String');
-    }
-    if (!collectionName || collectionName.indexOf('..') !== -1) {
-        throw new error_1.MongoInvalidArgumentError('Collection names cannot be empty');
-    }
-    if (collectionName.indexOf('$') !== -1 &&
-        collectionName.match(/((^\$cmd)|(oplog\.\$main))/) == null) {
-        // TODO(NODE-3483): Use MongoNamespace static method
-        throw new error_1.MongoInvalidArgumentError("Collection names must not contain '$'");
-    }
-    if (collectionName.match(/^\.|\.$/) != null) {
-        // TODO(NODE-3483): Use MongoNamespace static method
-        throw new error_1.MongoInvalidArgumentError("Collection names must not start or end with '.'");
-    }
-    // Validate that we are not passing 0x00 in the collection name
-    if (collectionName.indexOf('\x00') !== -1) {
-        // TODO(NODE-3483): Use MongoNamespace static method
-        throw new error_1.MongoInvalidArgumentError('Collection names cannot contain a null character');
-    }
-}
-exports.checkCollectionName = checkCollectionName;
-/**
- * Ensure Hint field is in a shape we expect:
- * - object of index names mapping to 1 or -1
- * - just an index name
- * @internal
- */
-function normalizeHintField(hint) {
-    let finalHint = undefined;
-    if (typeof hint === 'string') {
-        finalHint = hint;
-    }
-    else if (Array.isArray(hint)) {
-        finalHint = {};
-        hint.forEach(param => {
-            finalHint[param] = 1;
-        });
-    }
-    else if (hint != null && typeof hint === 'object') {
-        finalHint = {};
-        for (const name in hint) {
-            finalHint[name] = hint[name];
-        }
-    }
-    return finalHint;
-}
-exports.normalizeHintField = normalizeHintField;
-/**
- * Create an index specifier based on
- * @internal
- */
-function parseIndexOptions(indexSpec) {
-    const fieldHash = {};
-    const indexes = [];
-    let keys;
-    // Get all the fields accordingly
-    if ('string' === typeof indexSpec) {
-        // 'type'
-        indexes.push(indexSpec + '_' + 1);
-        fieldHash[indexSpec] = 1;
-    }
-    else if (Array.isArray(indexSpec)) {
-        indexSpec.forEach((f) => {
-            if ('string' === typeof f) {
-                // [{location:'2d'}, 'type']
-                indexes.push(f + '_' + 1);
-                fieldHash[f] = 1;
-            }
-            else if (Array.isArray(f)) {
-                // [['location', '2d'],['type', 1]]
-                indexes.push(f[0] + '_' + (f[1] || 1));
-                fieldHash[f[0]] = f[1] || 1;
-            }
-            else if (isObject(f)) {
-                // [{location:'2d'}, {type:1}]
-                keys = Object.keys(f);
-                keys.forEach(k => {
-                    indexes.push(k + '_' + f[k]);
-                    fieldHash[k] = f[k];
-                });
-            }
-            else {
-                // undefined (ignore)
-            }
-        });
-    }
-    else if (isObject(indexSpec)) {
-        // {location:'2d', type:1}
-        keys = Object.keys(indexSpec);
-        Object.entries(indexSpec).forEach(([key, value]) => {
-            indexes.push(key + '_' + value);
-            fieldHash[key] = value;
-        });
-    }
-    return {
-        name: indexes.join('_'),
-        keys: keys,
-        fieldHash: fieldHash
-    };
-}
-exports.parseIndexOptions = parseIndexOptions;
-/**
- * Checks if arg is an Object:
- * - **NOTE**: the check is based on the `[Symbol.toStringTag]() === 'Object'`
- * @internal
- */
-// eslint-disable-next-line @typescript-eslint/ban-types
-function isObject(arg) {
-    return '[object Object]' === Object.prototype.toString.call(arg);
-}
-exports.isObject = isObject;
-/** @internal */
-function mergeOptions(target, source) {
-    return { ...target, ...source };
-}
-exports.mergeOptions = mergeOptions;
-/** @internal */
-function filterOptions(options, names) {
-    const filterOptions = {};
-    for (const name in options) {
-        if (names.includes(name)) {
-            filterOptions[name] = options[name];
-        }
-    }
-    // Filtered options
-    return filterOptions;
-}
-exports.filterOptions = filterOptions;
-/**
- * Executes the given operation with provided arguments.
+
+const ms = require('ms');
+const mpath = require('mpath');
+const sliced = require('sliced');
+const Decimal = require('./types/decimal128');
+const ObjectId = require('./types/objectid');
+const PopulateOptions = require('./options/PopulateOptions');
+const clone = require('./helpers/clone');
+const immediate = require('./helpers/immediate');
+const isObject = require('./helpers/isObject');
+const isBsonType = require('./helpers/isBsonType');
+const getFunctionName = require('./helpers/getFunctionName');
+const isMongooseObject = require('./helpers/isMongooseObject');
+const promiseOrCallback = require('./helpers/promiseOrCallback');
+const schemaMerge = require('./helpers/schema/merge');
+const specialProperties = require('./helpers/specialProperties');
+const { trustedSymbol } = require('./helpers/query/trusted');
+
+let Document;
+
+exports.specialProperties = specialProperties;
+
+/*!
+ * Produces a collection name from model `name`. By default, just returns
+ * the model name
  *
- * @remarks
- * This method reduces large amounts of duplication in the entire codebase by providing
- * a single point for determining whether callbacks or promises should be used. Additionally
- * it allows for a single point of entry to provide features such as implicit sessions, which
- * are required by the Driver Sessions specification in the event that a ClientSession is
- * not provided
- *
- * @internal
- *
- * @param topology - The topology to execute this operation on
- * @param operation - The operation to execute
- * @param args - Arguments to apply the provided operation
- * @param options - Options that modify the behavior of the method
+ * @param {String} name a model name
+ * @param {Function} pluralize function that pluralizes the collection name
+ * @return {String} a collection name
+ * @api private
  */
-function executeLegacyOperation(topology, operation, args, options) {
-    const Promise = promise_provider_1.PromiseProvider.get();
-    if (!Array.isArray(args)) {
-        // TODO(NODE-3483)
-        throw new error_1.MongoRuntimeError('This method requires an array of arguments to apply');
-    }
-    options = options !== null && options !== void 0 ? options : {};
-    let callback = args[args.length - 1];
-    // The driver sessions spec mandates that we implicitly create sessions for operations
-    // that are not explicitly provided with a session.
-    let session;
-    let opOptions;
-    let owner;
-    if (!options.skipSessions && topology.hasSessionSupport()) {
-        opOptions = args[args.length - 2];
-        if (opOptions == null || opOptions.session == null) {
-            owner = Symbol();
-            session = topology.startSession({ owner });
-            const optionsIndex = args.length - 2;
-            args[optionsIndex] = Object.assign({}, args[optionsIndex], { session: session });
-        }
-        else if (opOptions.session && opOptions.session.hasEnded) {
-            throw new error_1.MongoExpiredSessionError();
-        }
-    }
-    function makeExecuteCallback(resolve, reject) {
-        return function (err, result) {
-            if (session && session.owner === owner && !(options === null || options === void 0 ? void 0 : options.returnsCursor)) {
-                session.endSession(() => {
-                    delete opOptions.session;
-                    if (err)
-                        return reject(err);
-                    resolve(result);
-                });
-            }
-            else {
-                if (err)
-                    return reject(err);
-                resolve(result);
-            }
-        };
-    }
-    // Execute using callback
-    if (typeof callback === 'function') {
-        callback = args.pop();
-        const handler = makeExecuteCallback(result => callback(undefined, result), err => callback(err, null));
-        args.push(handler);
-        try {
-            return operation(...args);
-        }
-        catch (e) {
-            handler(e);
-            throw e;
-        }
-    }
-    // Return a Promise
-    if (args[args.length - 1] != null) {
-        // TODO(NODE-3483)
-        throw new error_1.MongoRuntimeError('Final argument to `executeLegacyOperation` must be a callback');
-    }
-    return new Promise((resolve, reject) => {
-        const handler = makeExecuteCallback(resolve, reject);
-        args[args.length - 1] = handler;
-        try {
-            return operation(...args);
-        }
-        catch (e) {
-            handler(e);
-        }
-    });
-}
-exports.executeLegacyOperation = executeLegacyOperation;
-/**
- * Applies retryWrites: true to a command if retryWrites is set on the command's database.
- * @internal
- *
- * @param target - The target command to which we will apply retryWrites.
- * @param db - The database from which we can inherit a retryWrites value.
- */
-function applyRetryableWrites(target, db) {
-    var _a;
-    if (db && ((_a = db.s.options) === null || _a === void 0 ? void 0 : _a.retryWrites)) {
-        target.retryWrites = true;
-    }
-    return target;
-}
-exports.applyRetryableWrites = applyRetryableWrites;
-/**
- * Applies a write concern to a command based on well defined inheritance rules, optionally
- * detecting support for the write concern in the first place.
- * @internal
- *
- * @param target - the target command we will be applying the write concern to
- * @param sources - sources where we can inherit default write concerns from
- * @param options - optional settings passed into a command for write concern overrides
- */
-function applyWriteConcern(target, sources, options) {
-    options = options !== null && options !== void 0 ? options : {};
-    const db = sources.db;
-    const coll = sources.collection;
-    if (options.session && options.session.inTransaction()) {
-        // writeConcern is not allowed within a multi-statement transaction
-        if (target.writeConcern) {
-            delete target.writeConcern;
-        }
-        return target;
-    }
-    const writeConcern = write_concern_1.WriteConcern.fromOptions(options);
-    if (writeConcern) {
-        return Object.assign(target, { writeConcern });
-    }
-    if (coll && coll.writeConcern) {
-        return Object.assign(target, { writeConcern: Object.assign({}, coll.writeConcern) });
-    }
-    if (db && db.writeConcern) {
-        return Object.assign(target, { writeConcern: Object.assign({}, db.writeConcern) });
-    }
-    return target;
-}
-exports.applyWriteConcern = applyWriteConcern;
-/**
- * Checks if a given value is a Promise
- *
- * @typeParam T - The result type of maybePromise
- * @param maybePromise - An object that could be a promise
- * @returns true if the provided value is a Promise
- */
-function isPromiseLike(maybePromise) {
-    return !!maybePromise && typeof maybePromise.then === 'function';
-}
-exports.isPromiseLike = isPromiseLike;
-/**
- * Applies collation to a given command.
- * @internal
- *
- * @param command - the command on which to apply collation
- * @param target - target of command
- * @param options - options containing collation settings
- */
-function decorateWithCollation(command, target, options) {
-    const capabilities = getTopology(target).capabilities;
-    if (options.collation && typeof options.collation === 'object') {
-        if (capabilities && capabilities.commandsTakeCollation) {
-            command.collation = options.collation;
-        }
-        else {
-            throw new error_1.MongoCompatibilityError(`Current topology does not support collation`);
-        }
-    }
-}
-exports.decorateWithCollation = decorateWithCollation;
-/**
- * Applies a read concern to a given command.
- * @internal
- *
- * @param command - the command on which to apply the read concern
- * @param coll - the parent collection of the operation calling this method
- */
-function decorateWithReadConcern(command, coll, options) {
-    if (options && options.session && options.session.inTransaction()) {
-        return;
-    }
-    const readConcern = Object.assign({}, command.readConcern || {});
-    if (coll.s.readConcern) {
-        Object.assign(readConcern, coll.s.readConcern);
-    }
-    if (Object.keys(readConcern).length > 0) {
-        Object.assign(command, { readConcern: readConcern });
-    }
-}
-exports.decorateWithReadConcern = decorateWithReadConcern;
-/**
- * Applies an explain to a given command.
- * @internal
- *
- * @param command - the command on which to apply the explain
- * @param options - the options containing the explain verbosity
- */
-function decorateWithExplain(command, explain) {
-    if (command.explain) {
-        return command;
-    }
-    return { explain: command, verbosity: explain.verbosity };
-}
-exports.decorateWithExplain = decorateWithExplain;
-/**
- * A helper function to get the topology from a given provider. Throws
- * if the topology cannot be found.
- * @internal
- */
-function getTopology(provider) {
-    if (`topology` in provider && provider.topology) {
-        return provider.topology;
-    }
-    else if ('client' in provider.s && provider.s.client.topology) {
-        return provider.s.client.topology;
-    }
-    else if ('db' in provider.s && provider.s.db.s.client.topology) {
-        return provider.s.db.s.client.topology;
-    }
-    throw new error_1.MongoNotConnectedError('MongoClient must be connected to perform this operation');
-}
-exports.getTopology = getTopology;
-/**
- * Default message handler for generating deprecation warnings.
- * @internal
- *
- * @param name - function name
- * @param option - option name
- * @returns warning message
- */
-function defaultMsgHandler(name, option) {
-    return `${name} option [${option}] is deprecated and will be removed in a later version.`;
-}
-exports.defaultMsgHandler = defaultMsgHandler;
-/**
- * Deprecates a given function's options.
- * @internal
- *
- * @param this - the bound class if this is a method
- * @param config - configuration for deprecation
- * @param fn - the target function of deprecation
- * @returns modified function that warns once per deprecated option, and executes original function
- */
-function deprecateOptions(config, fn) {
-    if (process.noDeprecation === true) {
-        return fn;
-    }
-    const msgHandler = config.msgHandler ? config.msgHandler : defaultMsgHandler;
-    const optionsWarned = new Set();
-    function deprecated(...args) {
-        const options = args[config.optionsIndex];
-        // ensure options is a valid, non-empty object, otherwise short-circuit
-        if (!isObject(options) || Object.keys(options).length === 0) {
-            return fn.bind(this)(...args); // call the function, no change
-        }
-        // interrupt the function call with a warning
-        for (const deprecatedOption of config.deprecatedOptions) {
-            if (deprecatedOption in options && !optionsWarned.has(deprecatedOption)) {
-                optionsWarned.add(deprecatedOption);
-                const msg = msgHandler(config.name, deprecatedOption);
-                emitWarning(msg);
-                if (this && 'getLogger' in this) {
-                    const logger = this.getLogger();
-                    if (logger) {
-                        logger.warn(msg);
-                    }
-                }
-            }
-        }
-        return fn.bind(this)(...args);
-    }
-    // These lines copied from https://github.com/nodejs/node/blob/25e5ae41688676a5fd29b2e2e7602168eee4ceb5/lib/internal/util.js#L73-L80
-    // The wrapper will keep the same prototype as fn to maintain prototype chain
-    Object.setPrototypeOf(deprecated, fn);
-    if (fn.prototype) {
-        // Setting this (rather than using Object.setPrototype, as above) ensures
-        // that calling the unwrapped constructor gives an instanceof the wrapped
-        // constructor.
-        deprecated.prototype = fn.prototype;
-    }
-    return deprecated;
-}
-exports.deprecateOptions = deprecateOptions;
-/** @internal */
-function ns(ns) {
-    return MongoDBNamespace.fromString(ns);
-}
-exports.ns = ns;
-/** @public */
-class MongoDBNamespace {
-    /**
-     * Create a namespace object
-     *
-     * @param db - database name
-     * @param collection - collection name
-     */
-    constructor(db, collection) {
-        this.db = db;
-        this.collection = collection;
-    }
-    toString() {
-        return this.collection ? `${this.db}.${this.collection}` : this.db;
-    }
-    withCollection(collection) {
-        return new MongoDBNamespace(this.db, collection);
-    }
-    static fromString(namespace) {
-        if (!namespace) {
-            // TODO(NODE-3483): Replace with MongoNamespaceError
-            throw new error_1.MongoRuntimeError(`Cannot parse namespace from "${namespace}"`);
-        }
-        const [db, ...collection] = namespace.split('.');
-        return new MongoDBNamespace(db, collection.join('.'));
-    }
-}
-exports.MongoDBNamespace = MongoDBNamespace;
-/** @internal */
-function* makeCounter(seed = 0) {
-    let count = seed;
-    while (true) {
-        const newCount = count;
-        count += 1;
-        yield newCount;
-    }
-}
-exports.makeCounter = makeCounter;
-/**
- * Helper function for either accepting a callback, or returning a promise
- * @internal
- *
- * @param callback - The last function argument in exposed method, controls if a Promise is returned
- * @param wrapper - A function that wraps the callback
- * @returns Returns void if a callback is supplied, else returns a Promise.
- */
-function maybePromise(callback, wrapper) {
-    const Promise = promise_provider_1.PromiseProvider.get();
-    let result;
-    if (typeof callback !== 'function') {
-        result = new Promise((resolve, reject) => {
-            callback = (err, res) => {
-                if (err)
-                    return reject(err);
-                resolve(res);
-            };
-        });
-    }
-    wrapper((err, res) => {
-        if (err != null) {
-            try {
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-                callback(err);
-            }
-            catch (error) {
-                process.nextTick(() => {
-                    throw error;
-                });
-            }
-            return;
-        }
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        callback(err, res);
-    });
-    return result;
-}
-exports.maybePromise = maybePromise;
-/** @internal */
-function databaseNamespace(ns) {
-    return ns.split('.')[0];
-}
-exports.databaseNamespace = databaseNamespace;
-/**
- * Synchronously Generate a UUIDv4
- * @internal
- */
-function uuidV4() {
-    const result = crypto.randomBytes(16);
-    result[6] = (result[6] & 0x0f) | 0x40;
-    result[8] = (result[8] & 0x3f) | 0x80;
-    return result;
-}
-exports.uuidV4 = uuidV4;
-/**
- * A helper function for determining `maxWireVersion` between legacy and new topology instances
- * @internal
- */
-function maxWireVersion(topologyOrServer) {
-    if (topologyOrServer) {
-        if (topologyOrServer.loadBalanced) {
-            // Since we do not have a monitor, we assume the load balanced server is always
-            // pointed at the latest mongodb version. There is a risk that for on-prem
-            // deployments that don't upgrade immediately that this could alert to the
-            // application that a feature is avaiable that is actually not.
-            return constants_1.MAX_SUPPORTED_WIRE_VERSION;
-        }
-        if (topologyOrServer.ismaster) {
-            return topologyOrServer.ismaster.maxWireVersion;
-        }
-        if ('lastIsMaster' in topologyOrServer && typeof topologyOrServer.lastIsMaster === 'function') {
-            const lastIsMaster = topologyOrServer.lastIsMaster();
-            if (lastIsMaster) {
-                return lastIsMaster.maxWireVersion;
-            }
-        }
-        if (topologyOrServer.description &&
-            'maxWireVersion' in topologyOrServer.description &&
-            topologyOrServer.description.maxWireVersion != null) {
-            return topologyOrServer.description.maxWireVersion;
-        }
-    }
-    return 0;
-}
-exports.maxWireVersion = maxWireVersion;
-/**
- * Checks that collation is supported by server.
- * @internal
- *
- * @param server - to check against
- * @param cmd - object where collation may be specified
- */
-function collationNotSupported(server, cmd) {
-    return cmd && cmd.collation && maxWireVersion(server) < 5;
-}
-exports.collationNotSupported = collationNotSupported;
-/**
- * Applies the function `eachFn` to each item in `arr`, in parallel.
- * @internal
- *
- * @param arr - An array of items to asynchronously iterate over
- * @param eachFn - A function to call on each item of the array. The callback signature is `(item, callback)`, where the callback indicates iteration is complete.
- * @param callback - The callback called after every item has been iterated
- */
-function eachAsync(arr, eachFn, callback) {
-    arr = arr || [];
-    let idx = 0;
-    let awaiting = 0;
-    for (idx = 0; idx < arr.length; ++idx) {
-        awaiting++;
-        eachFn(arr[idx], eachCallback);
-    }
-    if (awaiting === 0) {
-        callback();
-        return;
-    }
-    function eachCallback(err) {
-        awaiting--;
-        if (err) {
-            callback(err);
-            return;
-        }
-        if (idx === arr.length && awaiting <= 0) {
-            callback();
-        }
-    }
-}
-exports.eachAsync = eachAsync;
-/** @internal */
-function eachAsyncSeries(arr, eachFn, callback) {
-    arr = arr || [];
-    let idx = 0;
-    let awaiting = arr.length;
-    if (awaiting === 0) {
-        callback();
-        return;
-    }
-    function eachCallback(err) {
-        idx++;
-        awaiting--;
-        if (err) {
-            callback(err);
-            return;
-        }
-        if (idx === arr.length && awaiting <= 0) {
-            callback();
-            return;
-        }
-        eachFn(arr[idx], eachCallback);
-    }
-    eachFn(arr[idx], eachCallback);
-}
-exports.eachAsyncSeries = eachAsyncSeries;
-/** @internal */
-function arrayStrictEqual(arr, arr2) {
-    if (!Array.isArray(arr) || !Array.isArray(arr2)) {
-        return false;
-    }
-    return arr.length === arr2.length && arr.every((elt, idx) => elt === arr2[idx]);
-}
-exports.arrayStrictEqual = arrayStrictEqual;
-/** @internal */
-function errorStrictEqual(lhs, rhs) {
-    if (lhs === rhs) {
-        return true;
-    }
-    if (!lhs || !rhs) {
-        return lhs === rhs;
-    }
-    if ((lhs == null && rhs != null) || (lhs != null && rhs == null)) {
-        return false;
-    }
-    if (lhs.constructor.name !== rhs.constructor.name) {
-        return false;
-    }
-    if (lhs.message !== rhs.message) {
-        return false;
-    }
-    return true;
-}
-exports.errorStrictEqual = errorStrictEqual;
-/** @internal */
-function makeStateMachine(stateTable) {
-    return function stateTransition(target, newState) {
-        const legalStates = stateTable[target.s.state];
-        if (legalStates && legalStates.indexOf(newState) < 0) {
-            throw new error_1.MongoRuntimeError(`illegal state transition from [${target.s.state}] => [${newState}], allowed: [${legalStates}]`);
-        }
-        target.emit('stateChanged', target.s.state, newState);
-        target.s.state = newState;
-    };
-}
-exports.makeStateMachine = makeStateMachine;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const NODE_DRIVER_VERSION = require('../package.json').version;
-function makeClientMetadata(options) {
-    options = options !== null && options !== void 0 ? options : {};
-    const metadata = {
-        driver: {
-            name: 'nodejs',
-            version: NODE_DRIVER_VERSION
-        },
-        os: {
-            type: os.type(),
-            name: process.platform,
-            architecture: process.arch,
-            version: os.release()
-        },
-        platform: `Node.js ${process.version}, ${os.endianness()} (unified)`
-    };
-    // support optionally provided wrapping driver info
-    if (options.driverInfo) {
-        if (options.driverInfo.name) {
-            metadata.driver.name = `${metadata.driver.name}|${options.driverInfo.name}`;
-        }
-        if (options.driverInfo.version) {
-            metadata.version = `${metadata.driver.version}|${options.driverInfo.version}`;
-        }
-        if (options.driverInfo.platform) {
-            metadata.platform = `${metadata.platform}|${options.driverInfo.platform}`;
-        }
-    }
-    if (options.appName) {
-        // MongoDB requires the appName not exceed a byte length of 128
-        const buffer = Buffer.from(options.appName);
-        metadata.application = {
-            name: buffer.byteLength > 128 ? buffer.slice(0, 128).toString('utf8') : options.appName
-        };
-    }
-    return metadata;
-}
-exports.makeClientMetadata = makeClientMetadata;
-/** @internal */
-function now() {
-    const hrtime = process.hrtime();
-    return Math.floor(hrtime[0] * 1000 + hrtime[1] / 1000000);
-}
-exports.now = now;
-/** @internal */
-function calculateDurationInMs(started) {
-    if (typeof started !== 'number') {
-        throw new error_1.MongoInvalidArgumentError('Numeric value required to calculate duration');
-    }
-    const elapsed = now() - started;
-    return elapsed < 0 ? 0 : elapsed;
-}
-exports.calculateDurationInMs = calculateDurationInMs;
-/**
- * Creates an interval timer which is able to be woken up sooner than
- * the interval. The timer will also debounce multiple calls to wake
- * ensuring that the function is only ever called once within a minimum
- * interval window.
- * @internal
- *
- * @param fn - An async function to run on an interval, must accept a `callback` as its only parameter
- */
-function makeInterruptibleAsyncInterval(fn, options) {
-    let timerId;
-    let lastCallTime;
-    let cannotBeExpedited = false;
-    let stopped = false;
-    options = options !== null && options !== void 0 ? options : {};
-    const interval = options.interval || 1000;
-    const minInterval = options.minInterval || 500;
-    const immediate = typeof options.immediate === 'boolean' ? options.immediate : false;
-    const clock = typeof options.clock === 'function' ? options.clock : now;
-    function wake() {
-        const currentTime = clock();
-        const nextScheduledCallTime = lastCallTime + interval;
-        const timeUntilNextCall = nextScheduledCallTime - currentTime;
-        // For the streaming protocol: there is nothing obviously stopping this
-        // interval from being woken up again while we are waiting "infinitely"
-        // for `fn` to be called again`. Since the function effectively
-        // never completes, the `timeUntilNextCall` will continue to grow
-        // negatively unbounded, so it will never trigger a reschedule here.
-        // This is possible in virtualized environments like AWS Lambda where our
-        // clock is unreliable. In these cases the timer is "running" but never
-        // actually completes, so we want to execute immediately and then attempt
-        // to reschedule.
-        if (timeUntilNextCall < 0) {
-            executeAndReschedule();
-            return;
-        }
-        // debounce multiple calls to wake within the `minInterval`
-        if (cannotBeExpedited) {
-            return;
-        }
-        // reschedule a call as soon as possible, ensuring the call never happens
-        // faster than the `minInterval`
-        if (timeUntilNextCall > minInterval) {
-            reschedule(minInterval);
-            cannotBeExpedited = true;
-        }
-    }
-    function stop() {
-        stopped = true;
-        if (timerId) {
-            clearTimeout(timerId);
-            timerId = undefined;
-        }
-        lastCallTime = 0;
-        cannotBeExpedited = false;
-    }
-    function reschedule(ms) {
-        if (stopped)
-            return;
-        if (timerId) {
-            clearTimeout(timerId);
-        }
-        timerId = setTimeout(executeAndReschedule, ms || interval);
-    }
-    function executeAndReschedule() {
-        cannotBeExpedited = false;
-        lastCallTime = clock();
-        fn(err => {
-            if (err)
-                throw err;
-            reschedule(interval);
-        });
-    }
-    if (immediate) {
-        executeAndReschedule();
-    }
-    else {
-        lastCallTime = clock();
-        reschedule(undefined);
-    }
-    return { wake, stop };
-}
-exports.makeInterruptibleAsyncInterval = makeInterruptibleAsyncInterval;
-/** @internal */
-function hasAtomicOperators(doc) {
-    if (Array.isArray(doc)) {
-        for (const document of doc) {
-            if (hasAtomicOperators(document)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    const keys = Object.keys(doc);
-    return keys.length > 0 && keys[0][0] === '$';
-}
-exports.hasAtomicOperators = hasAtomicOperators;
-/**
- * Merge inherited properties from parent into options, prioritizing values from options,
- * then values from parent.
- * @internal
- */
-function resolveOptions(parent, options) {
-    var _a, _b, _c;
-    const result = Object.assign({}, options, (0, bson_1.resolveBSONOptions)(options, parent));
-    // Users cannot pass a readConcern/writeConcern to operations in a transaction
-    const session = options === null || options === void 0 ? void 0 : options.session;
-    if (!(session === null || session === void 0 ? void 0 : session.inTransaction())) {
-        const readConcern = (_a = read_concern_1.ReadConcern.fromOptions(options)) !== null && _a !== void 0 ? _a : parent === null || parent === void 0 ? void 0 : parent.readConcern;
-        if (readConcern) {
-            result.readConcern = readConcern;
-        }
-        const writeConcern = (_b = write_concern_1.WriteConcern.fromOptions(options)) !== null && _b !== void 0 ? _b : parent === null || parent === void 0 ? void 0 : parent.writeConcern;
-        if (writeConcern) {
-            result.writeConcern = writeConcern;
-        }
-    }
-    const readPreference = (_c = read_preference_1.ReadPreference.fromOptions(options)) !== null && _c !== void 0 ? _c : parent === null || parent === void 0 ? void 0 : parent.readPreference;
-    if (readPreference) {
-        result.readPreference = readPreference;
-    }
-    return result;
-}
-exports.resolveOptions = resolveOptions;
-function isSuperset(set, subset) {
-    set = Array.isArray(set) ? new Set(set) : set;
-    subset = Array.isArray(subset) ? new Set(subset) : subset;
-    for (const elem of subset) {
-        if (!set.has(elem)) {
-            return false;
-        }
-    }
-    return true;
-}
-exports.isSuperset = isSuperset;
-/** Returns the items that are uniquely in setA */
-function setDifference(setA, setB) {
-    const difference = new Set(setA);
-    for (const elem of setB) {
-        difference.delete(elem);
-    }
-    return difference;
-}
-exports.setDifference = setDifference;
-function isRecord(value, requiredKeys = undefined) {
-    const toString = Object.prototype.toString;
-    const hasOwnProperty = Object.prototype.hasOwnProperty;
-    const isObject = (v) => toString.call(v) === '[object Object]';
-    if (!isObject(value)) {
-        return false;
-    }
-    const ctor = value.constructor;
-    if (ctor && ctor.prototype) {
-        if (!isObject(ctor.prototype)) {
-            return false;
-        }
-        // Check to see if some method exists from the Object exists
-        if (!hasOwnProperty.call(ctor.prototype, 'isPrototypeOf')) {
-            return false;
-        }
-    }
-    if (requiredKeys) {
-        const keys = Object.keys(value);
-        return isSuperset(keys, requiredKeys);
-    }
-    return true;
-}
-exports.isRecord = isRecord;
-/**
- * Make a deep copy of an object
- *
- * NOTE: This is not meant to be the perfect implementation of a deep copy,
- * but instead something that is good enough for the purposes of
- * command monitoring.
- */
-function deepCopy(value) {
-    if (value == null) {
-        return value;
-    }
-    else if (Array.isArray(value)) {
-        return value.map(item => deepCopy(item));
-    }
-    else if (isRecord(value)) {
-        const res = {};
-        for (const key in value) {
-            res[key] = deepCopy(value[key]);
-        }
-        return res;
-    }
-    const ctor = value.constructor;
-    if (ctor) {
-        switch (ctor.name.toLowerCase()) {
-            case 'date':
-                return new ctor(Number(value));
-            case 'map':
-                return new Map(value);
-            case 'set':
-                return new Set(value);
-            case 'buffer':
-                return Buffer.from(value);
-        }
-    }
-    return value;
-}
-exports.deepCopy = deepCopy;
-/** @internal */
-const kBuffers = Symbol('buffers');
-/** @internal */
-const kLength = Symbol('length');
-/**
- * A pool of Buffers which allow you to read them as if they were one
- * @internal
- */
-class BufferPool {
-    constructor() {
-        this[kBuffers] = [];
-        this[kLength] = 0;
-    }
-    get length() {
-        return this[kLength];
-    }
-    /** Adds a buffer to the internal buffer pool list */
-    append(buffer) {
-        this[kBuffers].push(buffer);
-        this[kLength] += buffer.length;
-    }
-    /** Returns the requested number of bytes without consuming them */
-    peek(size) {
-        return this.read(size, false);
-    }
-    /** Reads the requested number of bytes, optionally consuming them */
-    read(size, consume = true) {
-        if (typeof size !== 'number' || size < 0) {
-            throw new error_1.MongoInvalidArgumentError('Argument "size" must be a non-negative number');
-        }
-        if (size > this[kLength]) {
-            return Buffer.alloc(0);
-        }
-        let result;
-        // read the whole buffer
-        if (size === this.length) {
-            result = Buffer.concat(this[kBuffers]);
-            if (consume) {
-                this[kBuffers] = [];
-                this[kLength] = 0;
-            }
-        }
-        // size is within first buffer, no need to concat
-        else if (size <= this[kBuffers][0].length) {
-            result = this[kBuffers][0].slice(0, size);
-            if (consume) {
-                this[kBuffers][0] = this[kBuffers][0].slice(size);
-                this[kLength] -= size;
-            }
-        }
-        // size is beyond first buffer, need to track and copy
-        else {
-            result = Buffer.allocUnsafe(size);
-            let idx;
-            let offset = 0;
-            let bytesToCopy = size;
-            for (idx = 0; idx < this[kBuffers].length; ++idx) {
-                let bytesCopied;
-                if (bytesToCopy > this[kBuffers][idx].length) {
-                    bytesCopied = this[kBuffers][idx].copy(result, offset, 0);
-                    offset += bytesCopied;
-                }
-                else {
-                    bytesCopied = this[kBuffers][idx].copy(result, offset, 0, bytesToCopy);
-                    if (consume) {
-                        this[kBuffers][idx] = this[kBuffers][idx].slice(bytesCopied);
-                    }
-                    offset += bytesCopied;
-                    break;
-                }
-                bytesToCopy -= bytesCopied;
-            }
-            // compact the internal buffer array
-            if (consume) {
-                this[kBuffers] = this[kBuffers].slice(idx);
-                this[kLength] -= size;
-            }
-        }
-        return result;
-    }
-}
-exports.BufferPool = BufferPool;
-/** @public */
-class HostAddress {
-    constructor(hostString) {
-        const escapedHost = hostString.split(' ').join('%20'); // escape spaces, for socket path hosts
-        const { hostname, port } = new url_1.URL(`mongodb://${escapedHost}`);
-        if (hostname.endsWith('.sock')) {
-            // heuristically determine if we're working with a domain socket
-            this.socketPath = decodeURIComponent(hostname);
-        }
-        else if (typeof hostname === 'string') {
-            this.isIPv6 = false;
-            let normalized = decodeURIComponent(hostname).toLowerCase();
-            if (normalized.startsWith('[') && normalized.endsWith(']')) {
-                this.isIPv6 = true;
-                normalized = normalized.substring(1, hostname.length - 1);
-            }
-            this.host = normalized.toLowerCase();
-            if (typeof port === 'number') {
-                this.port = port;
-            }
-            else if (typeof port === 'string' && port !== '') {
-                this.port = Number.parseInt(port, 10);
-            }
-            else {
-                this.port = 27017;
-            }
-            if (this.port === 0) {
-                throw new error_1.MongoParseError('Invalid port (zero) with hostname');
-            }
-        }
-        else {
-            throw new error_1.MongoInvalidArgumentError('Either socketPath or host must be defined.');
-        }
-        Object.freeze(this);
-    }
-    [Symbol.for('nodejs.util.inspect.custom')]() {
-        return this.inspect();
-    }
-    inspect() {
-        return `new HostAddress('${this.toString(true)}')`;
-    }
-    /**
-     * @param ipv6Brackets - optionally request ipv6 bracket notation required for connection strings
-     */
-    toString(ipv6Brackets = false) {
-        if (typeof this.host === 'string') {
-            if (this.isIPv6 && ipv6Brackets) {
-                return `[${this.host}]:${this.port}`;
-            }
-            return `${this.host}:${this.port}`;
-        }
-        return `${this.socketPath}`;
-    }
-    static fromString(s) {
-        return new HostAddress(s);
-    }
-    static fromSrvRecord({ name, port }) {
-        return HostAddress.fromString(`${name}:${port}`);
-    }
-}
-exports.HostAddress = HostAddress;
-exports.DEFAULT_PK_FACTORY = {
-    // We prefer not to rely on ObjectId having a createPk method
-    createPk() {
-        return new bson_1.ObjectId();
-    }
+
+exports.toCollectionName = function(name, pluralize) {
+  if (name === 'system.profile') {
+    return name;
+  }
+  if (name === 'system.indexes') {
+    return name;
+  }
+  if (typeof pluralize === 'function') {
+    return pluralize(name);
+  }
+  return name;
 };
-/**
- * When the driver used emitWarning the code will be equal to this.
- * @public
+
+/*!
+ * Determines if `a` and `b` are deep equal.
  *
- * @example
- * ```js
- * process.on('warning', (warning) => {
- *  if (warning.code === MONGODB_WARNING_CODE) console.error('Ah an important warning! :)')
- * })
- * ```
- */
-exports.MONGODB_WARNING_CODE = 'MONGODB DRIVER';
-/** @internal */
-function emitWarning(message) {
-    return process.emitWarning(message, { code: exports.MONGODB_WARNING_CODE });
-}
-exports.emitWarning = emitWarning;
-const emittedWarnings = new Set();
-/**
- * Will emit a warning once for the duration of the application.
- * Uses the message to identify if it has already been emitted
- * so using string interpolation can cause multiple emits
- * @internal
- */
-function emitWarningOnce(message) {
-    if (!emittedWarnings.has(message)) {
-        emittedWarnings.add(message);
-        return emitWarning(message);
-    }
-}
-exports.emitWarningOnce = emitWarningOnce;
-/**
- * Takes a JS object and joins the values into a string separated by ', '
- */
-function enumToString(en) {
-    return Object.values(en).join(', ');
-}
-exports.enumToString = enumToString;
-/**
- * Determine if a server supports retryable writes.
+ * Modified from node/lib/assert.js
  *
- * @internal
+ * @param {any} a a value to compare to `b`
+ * @param {any} b a value to compare to `a`
+ * @return {Boolean}
+ * @api private
  */
-function supportsRetryableWrites(server) {
-    return (!!server.loadBalanced ||
-        (server.description.maxWireVersion >= 6 &&
-            !!server.description.logicalSessionTimeoutMinutes &&
-            server.description.type !== common_1.ServerType.Standalone));
-}
-exports.supportsRetryableWrites = supportsRetryableWrites;
-function parsePackageVersion({ version }) {
-    const [major, minor, patch] = version.split('.').map((n) => Number.parseInt(n, 10));
-    return { major, minor, patch };
-}
-exports.parsePackageVersion = parsePackageVersion;
-/**
- * Fisher–Yates Shuffle
+
+exports.deepEqual = function deepEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+
+  if (typeof a !== 'object' && typeof b !== 'object') {
+    return a === b;
+  }
+
+  if (a instanceof Date && b instanceof Date) {
+    return a.getTime() === b.getTime();
+  }
+
+  if ((isBsonType(a, 'ObjectID') && isBsonType(b, 'ObjectID')) ||
+      (isBsonType(a, 'Decimal128') && isBsonType(b, 'Decimal128'))) {
+    return a.toString() === b.toString();
+  }
+
+  if (a instanceof RegExp && b instanceof RegExp) {
+    return a.source === b.source &&
+        a.ignoreCase === b.ignoreCase &&
+        a.multiline === b.multiline &&
+        a.global === b.global;
+  }
+
+  if (a == null || b == null) {
+    return false;
+  }
+
+  if (a.prototype !== b.prototype) {
+    return false;
+  }
+
+  if (a instanceof Map && b instanceof Map) {
+    return deepEqual(Array.from(a.keys()), Array.from(b.keys())) &&
+      deepEqual(Array.from(a.values()), Array.from(b.values()));
+  }
+
+  // Handle MongooseNumbers
+  if (a instanceof Number && b instanceof Number) {
+    return a.valueOf() === b.valueOf();
+  }
+
+  if (Buffer.isBuffer(a)) {
+    return exports.buffer.areEqual(a, b);
+  }
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const len = a.length;
+    if (len !== b.length) {
+      return false;
+    }
+    for (let i = 0; i < len; ++i) {
+      if (!deepEqual(a[i], b[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  if (a.$__ != null) {
+    a = a._doc;
+  } else if (isMongooseObject(a)) {
+    a = a.toObject();
+  }
+
+  if (b.$__ != null) {
+    b = b._doc;
+  } else if (isMongooseObject(b)) {
+    b = b.toObject();
+  }
+
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  const kaLength = ka.length;
+
+  // having the same number of owned properties (keys incorporates
+  // hasOwnProperty)
+  if (kaLength !== kb.length) {
+    return false;
+  }
+
+  // ~~~cheap key test
+  for (let i = kaLength - 1; i >= 0; i--) {
+    if (ka[i] !== kb[i]) {
+      return false;
+    }
+  }
+
+  // equivalent values for every corresponding key, and
+  // ~~~possibly expensive deep test
+  for (const key of ka) {
+    if (!deepEqual(a[key], b[key])) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+/*!
+ * Get the last element of an array
+ */
+
+exports.last = function(arr) {
+  if (arr.length > 0) {
+    return arr[arr.length - 1];
+  }
+  return void 0;
+};
+
+exports.clone = clone;
+
+/*!
+ * ignore
+ */
+
+exports.promiseOrCallback = promiseOrCallback;
+
+/*!
+ * ignore
+ */
+
+exports.cloneArrays = function cloneArrays(arr) {
+  if (!Array.isArray(arr)) {
+    return arr;
+  }
+
+  return arr.map(el => exports.cloneArrays(el));
+};
+
+/*!
+ * ignore
+ */
+
+exports.omit = function omit(obj, keys) {
+  if (keys == null) {
+    return Object.assign({}, obj);
+  }
+  if (!Array.isArray(keys)) {
+    keys = [keys];
+  }
+
+  const ret = Object.assign({}, obj);
+  for (const key of keys) {
+    delete ret[key];
+  }
+  return ret;
+};
+
+
+/*!
+ * Shallow copies defaults into options.
  *
- * Reference: https://bost.ocks.org/mike/shuffle/
- * @param sequence - items to be shuffled
- * @param limit - Defaults to `0`. If nonzero shuffle will slice the randomized array e.g, `.slice(0, limit)` otherwise will return the entire randomized array.
+ * @param {Object} defaults
+ * @param {Object} options
+ * @return {Object} the merged object
+ * @api private
  */
-function shuffle(sequence, limit = 0) {
-    const items = Array.from(sequence); // shallow copy in order to never shuffle the input
-    if (limit > items.length) {
-        throw new error_1.MongoRuntimeError('Limit must be less than the number of items');
+
+exports.options = function(defaults, options) {
+  const keys = Object.keys(defaults);
+  let i = keys.length;
+  let k;
+
+  options = options || {};
+
+  while (i--) {
+    k = keys[i];
+    if (!(k in options)) {
+      options[k] = defaults[k];
     }
-    let remainingItemsToShuffle = items.length;
-    const lowerBound = limit % items.length === 0 ? 1 : items.length - limit;
-    while (remainingItemsToShuffle > lowerBound) {
-        // Pick a remaining element
-        const randomIndex = Math.floor(Math.random() * remainingItemsToShuffle);
-        remainingItemsToShuffle -= 1;
-        // And swap it with the current element
-        const swapHold = items[remainingItemsToShuffle];
-        items[remainingItemsToShuffle] = items[randomIndex];
-        items[randomIndex] = swapHold;
+  }
+
+  return options;
+};
+
+/*!
+ * Generates a random string
+ *
+ * @api private
+ */
+
+exports.random = function() {
+  return Math.random().toString().substr(3);
+};
+
+/*!
+ * Merges `from` into `to` without overwriting existing properties.
+ *
+ * @param {Object} to
+ * @param {Object} from
+ * @api private
+ */
+
+exports.merge = function merge(to, from, options, path) {
+  options = options || {};
+
+  const keys = Object.keys(from);
+  let i = 0;
+  const len = keys.length;
+  let key;
+
+  if (from[trustedSymbol]) {
+    to[trustedSymbol] = from[trustedSymbol];
+  }
+
+  path = path || '';
+  const omitNested = options.omitNested || {};
+
+  while (i < len) {
+    key = keys[i++];
+    if (options.omit && options.omit[key]) {
+      continue;
     }
-    return limit % items.length === 0 ? items : items.slice(lowerBound);
+    if (omitNested[path]) {
+      continue;
+    }
+    if (specialProperties.has(key)) {
+      continue;
+    }
+    if (to[key] == null) {
+      to[key] = from[key];
+    } else if (exports.isObject(from[key])) {
+      if (!exports.isObject(to[key])) {
+        to[key] = {};
+      }
+      if (from[key] != null) {
+        // Skip merging schemas if we're creating a discriminator schema and
+        // base schema has a given path as a single nested but discriminator schema
+        // has the path as a document array, or vice versa (gh-9534)
+        if (options.isDiscriminatorSchemaMerge &&
+            (from[key].$isSingleNested && to[key].$isMongooseDocumentArray) ||
+            (from[key].$isMongooseDocumentArray && to[key].$isSingleNested)) {
+          continue;
+        } else if (from[key].instanceOfSchema) {
+          if (to[key].instanceOfSchema) {
+            schemaMerge(to[key], from[key].clone(), options.isDiscriminatorSchemaMerge);
+          } else {
+            to[key] = from[key].clone();
+          }
+          continue;
+        } else if (from[key] instanceof ObjectId) {
+          to[key] = new ObjectId(from[key]);
+          continue;
+        }
+      }
+      merge(to[key], from[key], options, path ? path + '.' + key : key);
+    } else if (options.overwrite) {
+      to[key] = from[key];
+    }
+  }
+};
+
+/*!
+ * Applies toObject recursively.
+ *
+ * @param {Document|Array|Object} obj
+ * @return {Object}
+ * @api private
+ */
+
+exports.toObject = function toObject(obj) {
+  Document || (Document = require('./document'));
+  let ret;
+
+  if (obj == null) {
+    return obj;
+  }
+
+  if (obj instanceof Document) {
+    return obj.toObject();
+  }
+
+  if (Array.isArray(obj)) {
+    ret = [];
+
+    for (const doc of obj) {
+      ret.push(toObject(doc));
+    }
+
+    return ret;
+  }
+
+  if (exports.isPOJO(obj)) {
+    ret = {};
+
+    if (obj[trustedSymbol]) {
+      ret[trustedSymbol] = obj[trustedSymbol];
+    }
+
+    for (const k of Object.keys(obj)) {
+      if (specialProperties.has(k)) {
+        continue;
+      }
+      ret[k] = toObject(obj[k]);
+    }
+
+    return ret;
+  }
+
+  return obj;
+};
+
+exports.isObject = isObject;
+
+/*!
+ * Determines if `arg` is a plain old JavaScript object (POJO). Specifically,
+ * `arg` must be an object but not an instance of any special class, like String,
+ * ObjectId, etc.
+ *
+ * `Object.getPrototypeOf()` is part of ES5: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getPrototypeOf
+ *
+ * @param {Object|Array|String|Function|RegExp|any} arg
+ * @api private
+ * @return {Boolean}
+ */
+
+exports.isPOJO = function isPOJO(arg) {
+  if (arg == null || typeof arg !== 'object') {
+    return false;
+  }
+  const proto = Object.getPrototypeOf(arg);
+  // Prototype may be null if you used `Object.create(null)`
+  // Checking `proto`'s constructor is safe because `getPrototypeOf()`
+  // explicitly crosses the boundary from object data to object metadata
+  return !proto || proto.constructor.name === 'Object';
+};
+
+/*!
+ * Determines if `arg` is an object that isn't an instance of a built-in value
+ * class, like Array, Buffer, ObjectId, etc.
+ */
+
+exports.isNonBuiltinObject = function isNonBuiltinObject(val) {
+  return typeof val === 'object' &&
+    !exports.isNativeObject(val) &&
+    !exports.isMongooseType(val) &&
+    val != null;
+};
+
+/*!
+ * Determines if `obj` is a built-in object like an array, date, boolean,
+ * etc.
+ */
+
+exports.isNativeObject = function(arg) {
+  return Array.isArray(arg) ||
+    arg instanceof Date ||
+    arg instanceof Boolean ||
+    arg instanceof Number ||
+    arg instanceof String;
+};
+
+/*!
+ * Determines if `val` is an object that has no own keys
+ */
+
+exports.isEmptyObject = function(val) {
+  return val != null &&
+    typeof val === 'object' &&
+    Object.keys(val).length === 0;
+};
+
+/*!
+ * Search if `obj` or any POJOs nested underneath `obj` has a property named
+ * `key`
+ */
+
+exports.hasKey = function hasKey(obj, key) {
+  const props = Object.keys(obj);
+  for (const prop of props) {
+    if (prop === key) {
+      return true;
+    }
+    if (exports.isPOJO(obj[prop]) && exports.hasKey(obj[prop], key)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+/*!
+ * A faster Array.prototype.slice.call(arguments) alternative
+ * @api private
+ */
+
+exports.args = sliced;
+
+/*!
+ * process.nextTick helper.
+ *
+ * Wraps `callback` in a try/catch + nextTick.
+ *
+ * node-mongodb-native has a habit of state corruption when an error is immediately thrown from within a collection callback.
+ *
+ * @param {Function} callback
+ * @api private
+ */
+
+exports.tick = function tick(callback) {
+  if (typeof callback !== 'function') {
+    return;
+  }
+  return function() {
+    try {
+      callback.apply(this, arguments);
+    } catch (err) {
+      // only nextTick on err to get out of
+      // the event loop and avoid state corruption.
+      immediate(function() {
+        throw err;
+      });
+    }
+  };
+};
+
+/*!
+ * Returns true if `v` is an object that can be serialized as a primitive in
+ * MongoDB
+ */
+
+exports.isMongooseType = function(v) {
+  return v instanceof ObjectId || v instanceof Decimal || v instanceof Buffer;
+};
+
+exports.isMongooseObject = isMongooseObject;
+
+/*!
+ * Converts `expires` options of index objects to `expiresAfterSeconds` options for MongoDB.
+ *
+ * @param {Object} object
+ * @api private
+ */
+
+exports.expires = function expires(object) {
+  if (!(object && object.constructor.name === 'Object')) {
+    return;
+  }
+  if (!('expires' in object)) {
+    return;
+  }
+
+  let when;
+  if (typeof object.expires !== 'string') {
+    when = object.expires;
+  } else {
+    when = Math.round(ms(object.expires) / 1000);
+  }
+  object.expireAfterSeconds = when;
+  delete object.expires;
+};
+
+/*!
+ * populate helper
+ */
+
+exports.populate = function populate(path, select, model, match, options, subPopulate, justOne, count) {
+  // might have passed an object specifying all arguments
+  let obj = null;
+  if (arguments.length === 1) {
+    if (path instanceof PopulateOptions) {
+      return [path];
+    }
+
+    if (Array.isArray(path)) {
+      const singles = makeSingles(path);
+      return singles.map(o => exports.populate(o)[0]);
+    }
+
+    if (exports.isObject(path)) {
+      obj = Object.assign({}, path);
+    } else {
+      obj = { path: path };
+    }
+  } else if (typeof model === 'object') {
+    obj = {
+      path: path,
+      select: select,
+      match: model,
+      options: match
+    };
+  } else {
+    obj = {
+      path: path,
+      select: select,
+      model: model,
+      match: match,
+      options: options,
+      populate: subPopulate,
+      justOne: justOne,
+      count: count
+    };
+  }
+
+  if (typeof obj.path !== 'string') {
+    throw new TypeError('utils.populate: invalid path. Expected string. Got typeof `' + typeof path + '`');
+  }
+
+  return _populateObj(obj);
+
+  // The order of select/conditions args is opposite Model.find but
+  // necessary to keep backward compatibility (select could be
+  // an array, string, or object literal).
+  function makeSingles(arr) {
+    const ret = [];
+    arr.forEach(function(obj) {
+      if (/[\s]/.test(obj.path)) {
+        const paths = obj.path.split(' ');
+        paths.forEach(function(p) {
+          const copy = Object.assign({}, obj);
+          copy.path = p;
+          ret.push(copy);
+        });
+      } else {
+        ret.push(obj);
+      }
+    });
+
+    return ret;
+  }
+};
+
+function _populateObj(obj) {
+  if (Array.isArray(obj.populate)) {
+    const ret = [];
+    obj.populate.forEach(function(obj) {
+      if (/[\s]/.test(obj.path)) {
+        const copy = Object.assign({}, obj);
+        const paths = copy.path.split(' ');
+        paths.forEach(function(p) {
+          copy.path = p;
+          ret.push(exports.populate(copy)[0]);
+        });
+      } else {
+        ret.push(exports.populate(obj)[0]);
+      }
+    });
+    obj.populate = exports.populate(ret);
+  } else if (obj.populate != null && typeof obj.populate === 'object') {
+    obj.populate = exports.populate(obj.populate);
+  }
+
+  const ret = [];
+  const paths = obj.path.split(' ');
+  if (obj.options != null) {
+    obj.options = exports.clone(obj.options);
+  }
+
+  for (const path of paths) {
+    ret.push(new PopulateOptions(Object.assign({}, obj, { path: path })));
+  }
+
+  return ret;
 }
-exports.shuffle = shuffle;
-//# sourceMappingURL=utils.js.map
+
+/*!
+ * Return the value of `obj` at the given `path`.
+ *
+ * @param {String} path
+ * @param {Object} obj
+ */
+
+exports.getValue = function(path, obj, map) {
+  return mpath.get(path, obj, '_doc', map);
+};
+
+/*!
+ * Sets the value of `obj` at the given `path`.
+ *
+ * @param {String} path
+ * @param {Anything} val
+ * @param {Object} obj
+ */
+
+exports.setValue = function(path, val, obj, map, _copying) {
+  mpath.set(path, val, obj, '_doc', map, _copying);
+};
+
+/*!
+ * Returns an array of values from object `o`.
+ *
+ * @param {Object} o
+ * @return {Array}
+ * @private
+ */
+
+exports.object = {};
+exports.object.vals = function vals(o) {
+  const keys = Object.keys(o);
+  let i = keys.length;
+  const ret = [];
+
+  while (i--) {
+    ret.push(o[keys[i]]);
+  }
+
+  return ret;
+};
+
+/*!
+ * @see exports.options
+ */
+
+exports.object.shallowCopy = exports.options;
+
+/*!
+ * Safer helper for hasOwnProperty checks
+ *
+ * @param {Object} obj
+ * @param {String} prop
+ */
+
+const hop = Object.prototype.hasOwnProperty;
+exports.object.hasOwnProperty = function(obj, prop) {
+  return hop.call(obj, prop);
+};
+
+/*!
+ * Determine if `val` is null or undefined
+ *
+ * @return {Boolean}
+ */
+
+exports.isNullOrUndefined = function(val) {
+  return val === null || val === undefined;
+};
+
+/*!
+ * ignore
+ */
+
+exports.array = {};
+
+/*!
+ * Flattens an array.
+ *
+ * [ 1, [ 2, 3, [4] ]] -> [1,2,3,4]
+ *
+ * @param {Array} arr
+ * @param {Function} [filter] If passed, will be invoked with each item in the array. If `filter` returns a falsy value, the item will not be included in the results.
+ * @return {Array}
+ * @private
+ */
+
+exports.array.flatten = function flatten(arr, filter, ret) {
+  ret || (ret = []);
+
+  arr.forEach(function(item) {
+    if (Array.isArray(item)) {
+      flatten(item, filter, ret);
+    } else {
+      if (!filter || filter(item)) {
+        ret.push(item);
+      }
+    }
+  });
+
+  return ret;
+};
+
+/*!
+ * ignore
+ */
+
+const _hasOwnProperty = Object.prototype.hasOwnProperty;
+
+exports.hasUserDefinedProperty = function(obj, key) {
+  if (obj == null) {
+    return false;
+  }
+
+  if (Array.isArray(key)) {
+    for (const k of key) {
+      if (exports.hasUserDefinedProperty(obj, k)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (_hasOwnProperty.call(obj, key)) {
+    return true;
+  }
+  if (typeof obj === 'object' && key in obj) {
+    const v = obj[key];
+    return v !== Object.prototype[key] && v !== Array.prototype[key];
+  }
+
+  return false;
+};
+
+/*!
+ * ignore
+ */
+
+const MAX_ARRAY_INDEX = Math.pow(2, 32) - 1;
+
+exports.isArrayIndex = function(val) {
+  if (typeof val === 'number') {
+    return val >= 0 && val <= MAX_ARRAY_INDEX;
+  }
+  if (typeof val === 'string') {
+    if (!/^\d+$/.test(val)) {
+      return false;
+    }
+    val = +val;
+    return val >= 0 && val <= MAX_ARRAY_INDEX;
+  }
+
+  return false;
+};
+
+/*!
+ * Removes duplicate values from an array
+ *
+ * [1, 2, 3, 3, 5] => [1, 2, 3, 5]
+ * [ ObjectId("550988ba0c19d57f697dc45e"), ObjectId("550988ba0c19d57f697dc45e") ]
+ *    => [ObjectId("550988ba0c19d57f697dc45e")]
+ *
+ * @param {Array} arr
+ * @return {Array}
+ * @private
+ */
+
+exports.array.unique = function(arr) {
+  const primitives = new Set();
+  const ids = new Set();
+  const ret = [];
+
+  for (const item of arr) {
+    if (typeof item === 'number' || typeof item === 'string' || item == null) {
+      if (primitives.has(item)) {
+        continue;
+      }
+      ret.push(item);
+      primitives.add(item);
+    } else if (item instanceof ObjectId) {
+      if (ids.has(item.toString())) {
+        continue;
+      }
+      ret.push(item);
+      ids.add(item.toString());
+    } else {
+      ret.push(item);
+    }
+  }
+
+  return ret;
+};
+
+/*!
+ * Determines if two buffers are equal.
+ *
+ * @param {Buffer} a
+ * @param {Object} b
+ */
+
+exports.buffer = {};
+exports.buffer.areEqual = function(a, b) {
+  if (!Buffer.isBuffer(a)) {
+    return false;
+  }
+  if (!Buffer.isBuffer(b)) {
+    return false;
+  }
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let i = 0, len = a.length; i < len; ++i) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+  return true;
+};
+
+exports.getFunctionName = getFunctionName;
+/*!
+ * Decorate buffers
+ */
+
+exports.decorate = function(destination, source) {
+  for (const key in source) {
+    if (specialProperties.has(key)) {
+      continue;
+    }
+    destination[key] = source[key];
+  }
+};
+
+/**
+ * merges to with a copy of from
+ *
+ * @param {Object} to
+ * @param {Object} fromObj
+ * @api private
+ */
+
+exports.mergeClone = function(to, fromObj) {
+  if (isMongooseObject(fromObj)) {
+    fromObj = fromObj.toObject({
+      transform: false,
+      virtuals: false,
+      depopulate: true,
+      getters: false,
+      flattenDecimals: false
+    });
+  }
+  const keys = Object.keys(fromObj);
+  const len = keys.length;
+  let i = 0;
+  let key;
+
+  while (i < len) {
+    key = keys[i++];
+    if (specialProperties.has(key)) {
+      continue;
+    }
+    if (typeof to[key] === 'undefined') {
+      to[key] = exports.clone(fromObj[key], {
+        transform: false,
+        virtuals: false,
+        depopulate: true,
+        getters: false,
+        flattenDecimals: false
+      });
+    } else {
+      let val = fromObj[key];
+      if (val != null && val.valueOf && !(val instanceof Date)) {
+        val = val.valueOf();
+      }
+      if (exports.isObject(val)) {
+        let obj = val;
+        if (isMongooseObject(val) && !val.isMongooseBuffer) {
+          obj = obj.toObject({
+            transform: false,
+            virtuals: false,
+            depopulate: true,
+            getters: false,
+            flattenDecimals: false
+          });
+        }
+        if (val.isMongooseBuffer) {
+          obj = Buffer.from(obj);
+        }
+        exports.mergeClone(to[key], obj);
+      } else {
+        to[key] = exports.clone(val, {
+          flattenDecimals: false
+        });
+      }
+    }
+  }
+};
+
+/**
+ * Executes a function on each element of an array (like _.each)
+ *
+ * @param {Array} arr
+ * @param {Function} fn
+ * @api private
+ */
+
+exports.each = function(arr, fn) {
+  for (const item of arr) {
+    fn(item);
+  }
+};
+
+/*!
+ * ignore
+ */
+
+exports.getOption = function(name) {
+  const sources = Array.prototype.slice.call(arguments, 1);
+
+  for (const source of sources) {
+    if (source[name] != null) {
+      return source[name];
+    }
+  }
+
+  return null;
+};
+
+/*!
+ * ignore
+ */
+
+exports.noop = function() {};
+
+exports.errorToPOJO = function errorToPOJO(error) {
+  const isError = error instanceof Error;
+  if (!isError) {
+    throw new Error('`error` must be `instanceof Error`.');
+  }
+
+  const ret = {};
+  for (const properyName of Object.getOwnPropertyNames(error)) {
+    ret[properyName] = error[properyName];
+  }
+  return ret;
+};
+
+/*!
+ * ignore
+ */
+
+exports.warn = function warn(message) {
+  return process.emitWarning(message, { code: 'MONGOOSE' });
+};
