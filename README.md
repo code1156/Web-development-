@@ -1,279 +1,366 @@
-# MongoDB NodeJS Driver
+# Mongoose
 
-The official [MongoDB](https://www.mongodb.com/) driver for Node.js.
+Mongoose is a [MongoDB](https://www.mongodb.org/) object modeling tool designed to work in an asynchronous environment. Mongoose supports both promises and callbacks.
 
-**Upgrading to version 4? Take a look at our [upgrade guide here](https://github.com/mongodb/node-mongodb-native/blob/HEAD/docs/CHANGES_4.0.0.md)!**
+[![Slack Status](http://slack.mongoosejs.io/badge.svg)](http://slack.mongoosejs.io)
+[![Build Status](https://github.com/Automattic/mongoose/workflows/Test/badge.svg)](https://github.com/Automattic/mongoose)
+[![NPM version](https://badge.fury.io/js/mongoose.svg)](http://badge.fury.io/js/mongoose)
 
-## Quick Links
+[![npm](https://nodei.co/npm/mongoose.png)](https://www.npmjs.com/package/mongoose)
 
-| what          | where                                                                                                   |
-| ------------- | ------------------------------------------------------------------------------------------------------- |
-| documentation | [docs.mongodb.com/drivers/node](https://docs.mongodb.com/drivers/node)                                  |
-| api-doc       | [mongodb.github.io/node-mongodb-native/4.2/](https://mongodb.github.io/node-mongodb-native/4.2/)        |
-| npm package   | [www.npmjs.com/package/mongodb](https://www.npmjs.com/package/mongodb)                                  |
-| source        | [github.com/mongodb/node-mongodb-native](https://github.com/mongodb/node-mongodb-native)                |
-| mongodb       | [www.mongodb.com](https://www.mongodb.com)                                                              |
-| changelog     | [HISTORY.md](https://github.com/mongodb/node-mongodb-native/blob/HEAD/HISTORY.md)                       |
-| upgrade to v4 | [docs/CHANGES_4.0.0.md](https://github.com/mongodb/node-mongodb-native/blob/HEAD/docs/CHANGES_4.0.0.md) |
-| contributing  | [CONTRIBUTING.md](https://github.com/mongodb/node-mongodb-native/blob/HEAD/CONTRIBUTING.md)             |
+## Documentation
 
-### Bugs / Feature Requests
+The official documentation website is [mongoosejs.com](http://mongoosejs.com/).
 
-Think you’ve found a bug? Want to see a new feature in `node-mongodb-native`? Please open a
-case in our issue management tool, JIRA:
+Mongoose 6.0.0 was released on August 24, 2021. You can find more details on [backwards breaking changes in 6.0.0 on our docs site](https://mongoosejs.com/docs/migrating_to_6.html).
 
-- Create an account and login [jira.mongodb.org](https://jira.mongodb.org).
-- Navigate to the NODE project [jira.mongodb.org/browse/NODE](https://jira.mongodb.org/browse/NODE).
-- Click **Create Issue** - Please provide as much information as possible about the issue type and how to reproduce it.
+## Support
 
-Bug reports in JIRA for all driver projects (i.e. NODE, PYTHON, CSHARP, JAVA) and the
-Core Server (i.e. SERVER) project are **public**.
+  - [Stack Overflow](http://stackoverflow.com/questions/tagged/mongoose)
+  - [Bug Reports](https://github.com/Automattic/mongoose/issues/)
+  - [Mongoose Slack Channel](http://slack.mongoosejs.io/)
+  - [Help Forum](http://groups.google.com/group/mongoose-orm)
+  - [MongoDB Support](https://docs.mongodb.org/manual/support/)
 
-### Support / Feedback
+## Plugins
 
-For issues with, questions about, or feedback for the Node.js driver, please look into our [support channels](https://docs.mongodb.com/manual/support). Please do not email any of the driver developers directly with issues or questions - you're more likely to get an answer on the [MongoDB Community Forums](https://community.mongodb.com/tags/c/drivers-odms-connectors/7/node-js-driver).
+Check out the [plugins search site](http://plugins.mongoosejs.io/) to see hundreds of related modules from the community. Next, learn how to write your own plugin from the [docs](http://mongoosejs.com/docs/plugins.html) or [this blog post](http://thecodebarbarian.com/2015/03/06/guide-to-mongoose-plugins).
 
-### Change Log
+## Contributors
 
-Change history can be found in [`HISTORY.md`](https://github.com/mongodb/node-mongodb-native/blob/HEAD/HISTORY.md).
+Pull requests are always welcome! Please base pull requests against the `master`
+branch and follow the [contributing guide](https://github.com/Automattic/mongoose/blob/master/CONTRIBUTING.md).
 
-### Compatibility
+If your pull requests makes documentation changes, please do **not**
+modify any `.html` files. The `.html` files are compiled code, so please make
+your changes in `docs/*.pug`, `lib/*.js`, or `test/docs/*.js`.
 
-For version compatibility matrices, please refer to the following links:
-
-- [MongoDB](https://docs.mongodb.com/drivers/node/current/compatibility/#mongodb-compatibility)
-- [NodeJS](https://docs.mongodb.com/drivers/node/current/compatibility/#language-compatibility)
-
-#### Typescript Version
-
-We recommend using the latest version of typescript, however we do provide a [downleveled](https://github.com/sandersn/downlevel-dts#readme) version of the type definitions that we test compiling against `typescript@4.0.2`.
-Since typescript [does not restrict breaking changes to major versions](https://github.com/Microsoft/TypeScript/wiki/Breaking-Changes) we consider this support best effort.
-If you run into any unexpected compiler failures please let us know and we will do our best to correct it.
+View all 400+ [contributors](https://github.com/Automattic/mongoose/graphs/contributors).
 
 ## Installation
 
-The recommended way to get started using the Node.js 4.x driver is by using the `npm` (Node Package Manager) to install the dependency in your project.
-
-After you've created your own project using `npm init`, you can run:
-
-```bash
-npm install mongodb
-# or ...
-yarn add mongodb
-```
-
-This will download the MongoDB driver and add a dependency entry in your `package.json` file.
-
-If you are a Typescript user, you will need the Node.js type definitions to use the driver's definitions:
+First install [Node.js](http://nodejs.org/) and [MongoDB](https://www.mongodb.org/downloads). Then:
 
 ```sh
-npm install -D @types/node
+$ npm install mongoose
 ```
 
-## Troubleshooting
+## Importing
 
-The MongoDB driver depends on several other packages. These are:
+```javascript
+// Using Node.js `require()`
+const mongoose = require('mongoose');
 
-- [bson](https://github.com/mongodb/js-bson)
-- [bson-ext](https://github.com/mongodb-js/bson-ext)
-- [kerberos](https://github.com/mongodb-js/kerberos)
-- [mongodb-client-encryption](https://github.com/mongodb/libmongocrypt#readme)
-
-Some of these packages include native C++ extensions. Consult the [trouble shooting guide here](https://github.com/mongodb/node-mongodb-native/blob/HEAD/docs/native-extensions.md) if you run into issues.
-
-## Quick Start
-
-This guide will show you how to set up a simple application using Node.js and MongoDB. Its scope is only how to set up the driver and perform the simple CRUD operations. For more in-depth coverage, see the [official documentation](https://docs.mongodb.com/drivers/node/).
-
-### Create the `package.json` file
-
-First, create a directory where your application will live.
-
-```bash
-mkdir myProject
-cd myProject
+// Using ES6 imports
+import mongoose from 'mongoose';
 ```
 
-Enter the following command and answer the questions to create the initial structure for your new project:
+## Mongoose for Enterprise
 
-```bash
-npm init -y
-```
+Available as part of the Tidelift Subscription
 
-Next, install the driver as a dependency.
+The maintainers of mongoose and thousands of other packages are working with Tidelift to deliver commercial support and maintenance for the open source dependencies you use to build your applications. Save time, reduce risk, and improve code health, while paying the maintainers of the exact dependencies you use. [Learn more.](https://tidelift.com/subscription/pkg/npm-mongoose?utm_source=npm-mongoose&utm_medium=referral&utm_campaign=enterprise&utm_term=repo)
 
-```bash
-npm install mongodb
-```
+## Overview
 
-### Start a MongoDB Server
+### Connecting to MongoDB
 
-For complete MongoDB installation instructions, see [the manual](https://docs.mongodb.org/manual/installation/).
+First, we need to define a connection. If your app uses only one database, you should use `mongoose.connect`. If you need to create additional connections, use `mongoose.createConnection`.
 
-1. Download the right MongoDB version from [MongoDB](https://www.mongodb.org/downloads)
-2. Create a database directory (in this case under **/data**).
-3. Install and start a `mongod` process.
-
-```bash
-mongod --dbpath=/data
-```
-
-You should see the **mongod** process start up and print some status information.
-
-### Connect to MongoDB
-
-Create a new **app.js** file and add the following code to try out some basic CRUD
-operations using the MongoDB driver.
-
-Add code to connect to the server and the database **myProject**:
-
-> **NOTE:** All the examples below use async/await syntax.
->
-> However, all async API calls support an optional callback as the final argument,
-> if a callback is provided a Promise will not be returned.
+Both `connect` and `createConnection` take a `mongodb://` URI, or the parameters `host, database, port, options`.
 
 ```js
-const { MongoClient } = require('mongodb');
-// or as an es module:
-// import { MongoClient } from 'mongodb'
-
-// Connection URL
-const url = 'mongodb://localhost:27017';
-const client = new MongoClient(url);
-
-// Database Name
-const dbName = 'myProject';
-
-async function main() {
-  // Use connect method to connect to the server
-  await client.connect();
-  console.log('Connected successfully to server');
-  const db = client.db(dbName);
-  const collection = db.collection('documents');
-
-  // the following code examples can be pasted here...
-
-  return 'done.';
-}
-
-main()
-  .then(console.log)
-  .catch(console.error)
-  .finally(() => client.close());
+await mongoose.connect('mongodb://localhost/my_database');
 ```
 
-Run your app from the command line with:
+Once connected, the `open` event is fired on the `Connection` instance. If you're using `mongoose.connect`, the `Connection` is `mongoose.connection`. Otherwise, `mongoose.createConnection` return value is a `Connection`.
 
-```bash
-node app.js
-```
+**Note:** _If the local connection fails then try using 127.0.0.1 instead of localhost. Sometimes issues may arise when the local hostname has been changed._
 
-The application should print **Connected successfully to server** to the console.
+**Important!** Mongoose buffers all the commands until it's connected to the database. This means that you don't have to wait until it connects to MongoDB in order to define models, run queries, etc.
 
-### Insert a Document
+### Defining a Model
 
-Add to **app.js** the following function which uses the **insertMany**
-method to add three documents to the **documents** collection.
+Models are defined through the `Schema` interface.
 
 ```js
-const insertResult = await collection.insertMany([{ a: 1 }, { a: 2 }, { a: 3 }]);
-console.log('Inserted documents =>', insertResult);
+const Schema = mongoose.Schema;
+const ObjectId = Schema.ObjectId;
+
+const BlogPost = new Schema({
+  author: ObjectId,
+  title: String,
+  body: String,
+  date: Date
+});
 ```
 
-The **insertMany** command returns an object with information about the insert operations.
+Aside from defining the structure of your documents and the types of data you're storing, a Schema handles the definition of:
 
-### Find All Documents
+* [Validators](http://mongoosejs.com/docs/validation.html) (async and sync)
+* [Defaults](http://mongoosejs.com/docs/api.html#schematype_SchemaType-default)
+* [Getters](http://mongoosejs.com/docs/api.html#schematype_SchemaType-get)
+* [Setters](http://mongoosejs.com/docs/api.html#schematype_SchemaType-set)
+* [Indexes](http://mongoosejs.com/docs/guide.html#indexes)
+* [Middleware](http://mongoosejs.com/docs/middleware.html)
+* [Methods](http://mongoosejs.com/docs/guide.html#methods) definition
+* [Statics](http://mongoosejs.com/docs/guide.html#statics) definition
+* [Plugins](http://mongoosejs.com/docs/plugins.html)
+* [pseudo-JOINs](http://mongoosejs.com/docs/populate.html)
 
-Add a query that returns all the documents.
+The following example shows some of these features:
 
 ```js
-const findResult = await collection.find({}).toArray();
-console.log('Found documents =>', findResult);
+const Comment = new Schema({
+  name: { type: String, default: 'hahaha' },
+  age: { type: Number, min: 18, index: true },
+  bio: { type: String, match: /[a-z]/ },
+  date: { type: Date, default: Date.now },
+  buff: Buffer
+});
+
+// a setter
+Comment.path('name').set(function (v) {
+  return capitalize(v);
+});
+
+// middleware
+Comment.pre('save', function (next) {
+  notify(this.get('email'));
+  next();
+});
 ```
 
-This query returns all the documents in the **documents** collection.
-If you add this below the insertMany example you'll see the document's you've inserted.
+Take a look at the example in [`examples/schema/schema.js`](https://github.com/Automattic/mongoose/blob/master/examples/schema/schema.js) for an end-to-end example of a typical setup.
 
-### Find Documents with a Query Filter
+### Accessing a Model
 
-Add a query filter to find only documents which meet the query criteria.
+Once we define a model through `mongoose.model('ModelName', mySchema)`, we can access it through the same function
 
 ```js
-const filteredDocs = await collection.find({ a: 3 }).toArray();
-console.log('Found documents filtered by { a: 3 } =>', filteredDocs);
+const MyModel = mongoose.model('ModelName');
 ```
 
-Only the documents which match `'a' : 3` should be returned.
-
-### Update a document
-
-The following operation updates a document in the **documents** collection.
+Or just do it all at once
 
 ```js
-const updateResult = await collection.updateOne({ a: 3 }, { $set: { b: 1 } });
-console.log('Updated documents =>', updateResult);
+const MyModel = mongoose.model('ModelName', mySchema);
 ```
 
-The method updates the first document where the field **a** is equal to **3** by adding a new field **b** to the document set to **1**. `updateResult` contains information about whether there was a matching document to update or not.
-
-### Remove a document
-
-Remove the document where the field **a** is equal to **3**.
+The first argument is the _singular_ name of the collection your model is for. **Mongoose automatically looks for the _plural_ version of your model name.** For example, if you use
 
 ```js
-const deleteResult = await collection.deleteMany({ a: 3 });
-console.log('Deleted documents =>', deleteResult);
+const MyModel = mongoose.model('Ticket', mySchema);
 ```
 
-### Index a Collection
+Then Mongoose will create the model for your __tickets__ collection, not your __ticket__ collection.
 
-[Indexes](https://docs.mongodb.org/manual/indexes/) can improve your application's
-performance. The following function creates an index on the **a** field in the
-**documents** collection.
+Once we have our model, we can then instantiate it, and save it:
 
 ```js
-const indexName = await collection.createIndex({ a: 1 });
-console.log('index name =', indexName);
+const instance = new MyModel();
+instance.my.key = 'hello';
+instance.save(function (err) {
+  //
+});
 ```
 
-For more detailed information, see the [indexing strategies page](https://docs.mongodb.com/manual/applications/indexes/).
+Or we can find documents from the same collection
 
-## Error Handling
+```js
+MyModel.find({}, function (err, docs) {
+  // docs.forEach
+});
+```
 
-If you need to filter certain errors from our driver we have a helpful tree of errors described in [docs/errors.md](https://github.com/mongodb/node-mongodb-native/blob/HEAD/docs/errors.md).
+You can also `findOne`, `findById`, `update`, etc.
 
-It is our recommendation to use `instanceof` checks on errors and to avoid relying on parsing `error.message` and `error.name` strings in your code.
-We guarantee `instanceof` checks will pass according to semver guidelines, but errors may be sub-classed or their messages may change at any time, even patch releases, as we see fit to increase the helpfulness of the errors.
+```js
+const instance = await MyModel.findOne({ ... });
+console.log(instance.my.key);  // 'hello'
+```
 
-Any new errors we add to the driver will directly extend an existing error class and no existing error will be moved to a different parent class outside of a major release.
-This means `instanceof` will always be able to accurately capture the errors that our driver throws (or returns in a callback).
+For more details check out [the docs](http://mongoosejs.com/docs/queries.html).
 
-```typescript
-const client = new MongoClient(url);
-await client.connect();
-const collection = client.db().collection('collection');
+**Important!** If you opened a separate connection using `mongoose.createConnection()` but attempt to access the model through `mongoose.model('ModelName')` it will not work as expected since it is not hooked up to an active db connection. In this case access your model through the connection you created:
 
-try {
-  await collection.insertOne({ _id: 1 });
-  await collection.insertOne({ _id: 1 }); // duplicate key error
-} catch (error) {
-  if (error instanceof MongoServerError) {
-    console.log(`Error worth logging: ${error}`); // special case for some reason
+```js
+const conn = mongoose.createConnection('your connection string');
+const MyModel = conn.model('ModelName', schema);
+const m = new MyModel;
+m.save(); // works
+```
+
+vs
+
+```js
+const conn = mongoose.createConnection('your connection string');
+const MyModel = mongoose.model('ModelName', schema);
+const m = new MyModel;
+m.save(); // does not work b/c the default connection object was never connected
+```
+
+### Embedded Documents
+
+In the first example snippet, we defined a key in the Schema that looks like:
+
+```
+comments: [Comment]
+```
+
+Where `Comment` is a `Schema` we created. This means that creating embedded documents is as simple as:
+
+```js
+// retrieve my model
+const BlogPost = mongoose.model('BlogPost');
+
+// create a blog post
+const post = new BlogPost();
+
+// create a comment
+post.comments.push({ title: 'My comment' });
+
+post.save(function (err) {
+  if (!err) console.log('Success!');
+});
+```
+
+The same goes for removing them:
+
+```js
+BlogPost.findById(myId, function (err, post) {
+  if (!err) {
+    post.comments[0].remove();
+    post.save(function (err) {
+      // do something
+    });
   }
-  throw error; // still want to crash
-}
+});
 ```
 
-## Next Steps
+Embedded documents enjoy all the same features as your models. Defaults, validators, middleware. Whenever an error occurs, it's bubbled to the `save()` error callback, so error handling is a snap!
 
-- [MongoDB Documentation](https://docs.mongodb.com/manual/)
-- [MongoDB Node Driver Documentation](https://docs.mongodb.com/drivers/node/)
-- [Read about Schemas](https://docs.mongodb.com/manual/core/data-modeling-introduction/)
-- [Star us on GitHub](https://github.com/mongodb/node-mongodb-native)
+
+### Middleware
+
+See the [docs](http://mongoosejs.com/docs/middleware.html) page.
+
+#### Intercepting and mutating method arguments
+
+You can intercept method arguments via middleware.
+
+For example, this would allow you to broadcast changes about your Documents every time someone `set`s a path in your Document to a new value:
+
+```js
+schema.pre('set', function (next, path, val, typel) {
+  // `this` is the current Document
+  this.emit('set', path, val);
+
+  // Pass control to the next pre
+  next();
+});
+```
+
+Moreover, you can mutate the incoming `method` arguments so that subsequent middleware see different values for those arguments. To do so, just pass the new values to `next`:
+
+```js
+.pre(method, function firstPre (next, methodArg1, methodArg2) {
+  // Mutate methodArg1
+  next("altered-" + methodArg1.toString(), methodArg2);
+});
+
+// pre declaration is chainable
+.pre(method, function secondPre (next, methodArg1, methodArg2) {
+  console.log(methodArg1);
+  // => 'altered-originalValOfMethodArg1'
+
+  console.log(methodArg2);
+  // => 'originalValOfMethodArg2'
+
+  // Passing no arguments to `next` automatically passes along the current argument values
+  // i.e., the following `next()` is equivalent to `next(methodArg1, methodArg2)`
+  // and also equivalent to, with the example method arg
+  // values, `next('altered-originalValOfMethodArg1', 'originalValOfMethodArg2')`
+  next();
+});
+```
+
+#### Schema gotcha
+
+`type`, when used in a schema has special meaning within Mongoose. If your schema requires using `type` as a nested property you must use object notation:
+
+```js
+new Schema({
+  broken: { type: Boolean },
+  asset: {
+    name: String,
+    type: String // uh oh, it broke. asset will be interpreted as String
+  }
+});
+
+new Schema({
+  works: { type: Boolean },
+  asset: {
+    name: String,
+    type: { type: String } // works. asset is an object with a type property
+  }
+});
+```
+
+### Driver Access
+
+Mongoose is built on top of the [official MongoDB Node.js driver](https://github.com/mongodb/node-mongodb-native). Each mongoose model keeps a reference to a [native MongoDB driver collection](http://mongodb.github.io/node-mongodb-native/2.1/api/Collection.html). The collection object can be accessed using `YourModel.collection`. However, using the collection object directly bypasses all mongoose features, including hooks, validation, etc. The one
+notable exception that `YourModel.collection` still buffers
+commands. As such, `YourModel.collection.find()` will **not**
+return a cursor.
+
+## API Docs
+
+Find the API docs [here](http://mongoosejs.com/docs/api.html), generated using [dox](https://github.com/tj/dox)
+and [acquit](https://github.com/vkarpov15/acquit).
+
+## Related Projects
+
+#### MongoDB Runners
+
+- [run-rs](https://www.npmjs.com/package/run-rs)
+- [mongodb-memory-server](https://www.npmjs.com/package/mongodb-memory-server)
+- [mongodb-topology-manager](https://www.npmjs.com/package/mongodb-topology-manager)
+
+#### Unofficial CLIs
+
+- [mongoosejs-cli](https://www.npmjs.com/package/mongoosejs-cli)
+
+#### Data Seeding
+
+- [dookie](https://www.npmjs.com/package/dookie)
+- [seedgoose](https://www.npmjs.com/package/seedgoose)
+- [mongoose-data-seed](https://www.npmjs.com/package/mongoose-data-seed)
+
+#### Express Session Stores
+
+- [connect-mongodb-session](https://www.npmjs.com/package/connect-mongodb-session)
+- [connect-mongo](https://www.npmjs.com/package/connect-mongo)
 
 ## License
 
-[Apache 2.0](LICENSE.md)
+Copyright (c) 2010 LearnBoost &lt;dev@learnboost.com&gt;
 
-© 2009-2012 Christian Amor Kvalheim
-© 2012-present MongoDB [Contributors](https://github.com/mongodb/node-mongodb-native/blob/HEAD/CONTRIBUTORS.md)
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+'Software'), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
